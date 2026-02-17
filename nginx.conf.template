@@ -9,11 +9,16 @@ server {
 
   client_max_body_size 50m;
 
-  # 1) Allow Streamlit static assets WITHOUT Basic Auth
-  #    This avoids "Failed to fetch dynamically imported module" errors.
+  # Railway private DNS resolver (visible in Railway private network dig output)
+  resolver [fd12::10] valid=10s ipv6=off;
+  resolver_timeout 5s;
+
+  # Use a variable so Nginx re-resolves the upstream periodically (needed for dynamic service IPs)
+  set $upstream ${ORIGIN};
+
+  # Allow Streamlit frontend bundles to load without auth.
+  # This avoids "Failed to fetch dynamically imported module" for /static/js/*.
   location ^~ /static/ {
-    auth_basic off;
-
     proxy_http_version 1.1;
 
     proxy_set_header Host $host;
@@ -25,12 +30,12 @@ server {
     proxy_buffering off;
     proxy_read_timeout 86400;
 
-    proxy_pass ${ORIGIN};
+    proxy_pass $upstream;
   }
 
-  # Some Streamlit builds also serve assets here
-  location ^~ /_stcore/static/ {
-    auth_basic off;
+  # Streamlit websocket endpoint (must stay protected)
+  location ^~ /_stcore/stream {
+    include /etc/nginx/snippets/basic_auth.conf;
 
     proxy_http_version 1.1;
 
@@ -40,13 +45,16 @@ server {
     proxy_set_header X-Real-IP $remote_addr;
     proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
 
+    proxy_set_header Upgrade $http_upgrade;
+    proxy_set_header Connection $connection_upgrade;
+
     proxy_buffering off;
     proxy_read_timeout 86400;
 
-    proxy_pass ${ORIGIN};
+    proxy_pass $upstream;
   }
 
-  # 2) Everything else requires Basic Auth (HTML, API calls, websockets)
+  # Everything else stays protected
   location / {
     include /etc/nginx/snippets/basic_auth.conf;
 
@@ -58,13 +66,12 @@ server {
     proxy_set_header X-Real-IP $remote_addr;
     proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
 
-    # WebSocket support (Streamlit needs it)
     proxy_set_header Upgrade $http_upgrade;
     proxy_set_header Connection $connection_upgrade;
 
     proxy_buffering off;
     proxy_read_timeout 86400;
 
-    proxy_pass ${ORIGIN};
+    proxy_pass $upstream;
   }
 }
