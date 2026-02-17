@@ -9,15 +9,15 @@ server {
 
   client_max_body_size 50m;
 
-  # Railway private DNS resolver (visible in Railway private network dig output)
-  resolver [fd12::10] valid=10s ipv6=off;
+  # Railway internal DNS resolver (your logs show fd12::10)
+  resolver [fd12::10] valid=10s;
   resolver_timeout 5s;
 
-  # Use a variable so Nginx re-resolves the upstream periodically (needed for dynamic service IPs)
+  # Use a variable so Nginx resolves the hostname via the resolver
   set $upstream ${ORIGIN};
 
   # Allow Streamlit frontend bundles to load without auth.
-  # This avoids "Failed to fetch dynamically imported module" for /static/js/*.
+  # This prevents "Failed to fetch dynamically imported module" for /static/js/*
   location ^~ /static/ {
     proxy_http_version 1.1;
 
@@ -33,7 +33,7 @@ server {
     proxy_pass $upstream;
   }
 
-  # Streamlit websocket endpoint (must stay protected)
+  # Streamlit websocket endpoint (keep protected)
   location ^~ /_stcore/stream {
     include /etc/nginx/snippets/basic_auth.conf;
 
